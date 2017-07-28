@@ -19,7 +19,7 @@
             </intent-filter>
         </activity>
 
-        <service android:name=".ActivityRecognizedService" />
+        <service android:name=".ActivityRecognitionService" />
     </application>
 
 </manifest>

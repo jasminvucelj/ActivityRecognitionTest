@@ -6,11 +6,18 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.icu.text.SimpleDateFormat;
+import android.icu.util.Calendar;
 import android.os.Bundle;
+import android.os.Vibrator;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.content.LocalBroadcastManager;
+import android.text.format.DateFormat;
+import android.text.format.Time;
 import android.util.Log;
+import android.view.View;
+import android.widget.Button;
 import android.widget.TextView;
 
 import com.google.android.gms.common.ConnectionResult;
@@ -20,28 +27,64 @@ import com.google.android.gms.common.api.GoogleApiClient.OnConnectionFailedListe
 import com.google.android.gms.location.ActivityRecognition;
 import com.google.android.gms.location.DetectedActivity;
 
+import java.io.BufferedReader;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.util.ArrayList;
+
 
 public class MainActivity extends Activity implements ConnectionCallbacks, OnConnectionFailedListener {
 
     final int CONFIDENCE_THRESHOLD = 75;
 
-    TextView tv;
+    TextView tv, tv2;
+    Button button;
+
+    Vibrator v;
+
+    String output = "";
 
     GoogleApiClient mApiClient;
 
     private BroadcastReceiver activityReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            int type = intent.getIntExtra("type", DetectedActivity.UNKNOWN);
-            int confidence = intent.getIntExtra("confidence", 0);
+            ArrayList<Integer> typeList = intent.getIntegerArrayListExtra("type");
+            ArrayList<Integer> confidenceList = intent.getIntegerArrayListExtra("confidence");
 
-            if(confidence >= CONFIDENCE_THRESHOLD){
-                tv.setText("most probable activity: " + String.valueOf(type));
+            if (typeList != null && !typeList.isEmpty() && confidenceList != null && !confidenceList.isEmpty()) {
+                if (v != null && v.hasVibrator()) {
+                    v.vibrate(500);
+                }
+
+                output += activitiesAsString(typeList, confidenceList);
             }
-
-            // Toast.makeText(context, message, Toast.LENGTH_SHORT).show();
         }
     };
+
+
+    String activitiesAsString(ArrayList<Integer> typeList, ArrayList<Integer> confidenceList) {
+        StringBuilder sb = new StringBuilder();
+
+        Time currentTime = new Time();
+        currentTime.setToNow();
+
+        sb.append(currentTime.format2445());
+        sb.append(":\n");
+
+        int size = typeList.size();
+        for (int i = 0; i < size; i++) {
+            sb.append(typeList.get(i));
+            sb.append(" (");
+            sb.append(confidenceList.get(i));
+            sb.append("%)\n\n");
+        }
+
+        return sb.toString();
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,6 +92,20 @@ public class MainActivity extends Activity implements ConnectionCallbacks, OnCon
         setContentView(R.layout.activity_main);
 
         tv = (TextView) findViewById(R.id.tv);
+        tv2 = (TextView) findViewById(R.id.tv2);
+        button = (Button) findViewById(R.id.button);
+
+        tv2.setText("\nIN_VEHICLE: 0\nON_BICYCLE: 1\nON_FOOT: 2\nRUNNING: 8\nSTILL: 3\nTILTING: 5\nWALKING: 7\nUNKNOWN: 4");
+
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                writeToFile("log.txt", output, MainActivity.this);
+                tv.setText(readFromFile("log.txt", MainActivity.this));
+            }
+        });
+
+        v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
 
         LocalBroadcastManager.getInstance(this).registerReceiver(
                 activityReceiver, new IntentFilter("activityRecognitionIntent"));
@@ -63,6 +120,11 @@ public class MainActivity extends Activity implements ConnectionCallbacks, OnCon
 
     }
 
+    @Override
+    protected void onDestroy() {
+        v.cancel();
+        super.onDestroy();
+    }
 
     @Override
     public void onConnected(@Nullable Bundle bundle) {
@@ -72,8 +134,8 @@ public class MainActivity extends Activity implements ConnectionCallbacks, OnCon
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT);
         ActivityRecognition.ActivityRecognitionApi.requestActivityUpdates(mApiClient,
-                3 * 1000,
-                pendingIntent); // 3s
+                6 * 1000,
+                pendingIntent);
         Log.e("MainActivity","Connected");
     }
 
@@ -87,4 +149,50 @@ public class MainActivity extends Activity implements ConnectionCallbacks, OnCon
         Log.e("MainActivity","Connection failed");
 
     }
+
+
+    private void writeToFile(String filename, String data, Context context) {
+        try {
+            OutputStreamWriter outputStreamWriter = new OutputStreamWriter(context.openFileOutput(filename, Context.MODE_PRIVATE));
+            outputStreamWriter.write(data);
+            outputStreamWriter.close();
+        }
+        catch (IOException e) {
+            Log.e("IOException", "File write failed: " + e.toString());
+        }
+    }
+
+
+    private String readFromFile(String filename, Context context) {
+
+        String ret = "";
+
+        try {
+            InputStream inputStream = context.openFileInput(filename);
+
+            if ( inputStream != null ) {
+                InputStreamReader inputStreamReader = new InputStreamReader(inputStream);
+                BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
+                String receiveString = "";
+                StringBuilder stringBuilder = new StringBuilder();
+
+                while ( (receiveString = bufferedReader.readLine()) != null ) {
+                    stringBuilder.append(receiveString);
+                }
+
+                inputStream.close();
+                ret = stringBuilder.toString();
+            }
+        }
+        catch (FileNotFoundException e) {
+            Log.e("FileNotFoundException", "File not found: " + e.toString());
+        } catch (IOException e) {
+            Log.e("IOException", "Can not read file: " + e.toString());
+        }
+
+        return ret;
+    }
+
+
+
 }

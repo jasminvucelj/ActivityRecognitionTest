@@ -6,14 +6,11 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.icu.text.SimpleDateFormat;
-import android.icu.util.Calendar;
 import android.os.Bundle;
 import android.os.Vibrator;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.content.LocalBroadcastManager;
-import android.text.format.DateFormat;
 import android.text.format.Time;
 import android.util.Log;
 import android.view.View;
@@ -25,9 +22,9 @@ import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.GoogleApiClient.ConnectionCallbacks;
 import com.google.android.gms.common.api.GoogleApiClient.OnConnectionFailedListener;
 import com.google.android.gms.location.ActivityRecognition;
-import com.google.android.gms.location.DetectedActivity;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -39,6 +36,7 @@ import java.util.ArrayList;
 public class MainActivity extends Activity implements ConnectionCallbacks, OnConnectionFailedListener {
 
     final int CONFIDENCE_THRESHOLD = 75;
+    final String FILENAME = "log.txt";
 
     TextView tv, tv2;
     Button button;
@@ -56,11 +54,12 @@ public class MainActivity extends Activity implements ConnectionCallbacks, OnCon
             ArrayList<Integer> confidenceList = intent.getIntegerArrayListExtra("confidence");
 
             if (typeList != null && !typeList.isEmpty() && confidenceList != null && !confidenceList.isEmpty()) {
-                if (v != null && v.hasVibrator()) {
+                /*if (v != null && v.hasVibrator()) {
                     v.vibrate(500);
-                }
+                }*/
 
-                output += activitiesAsString(typeList, confidenceList);
+                output = activitiesAsString(typeList, confidenceList);
+                writeToFile(FILENAME, output, MainActivity.this);
             }
         }
     };
@@ -77,9 +76,9 @@ public class MainActivity extends Activity implements ConnectionCallbacks, OnCon
 
         int size = typeList.size();
         for (int i = 0; i < size; i++) {
-            sb.append(typeList.get(i));
+            sb.append(String.valueOf(typeList.get(i)));
             sb.append(" (");
-            sb.append(confidenceList.get(i));
+            sb.append(String.valueOf(confidenceList.get(i)));
             sb.append("%)\n\n");
         }
 
@@ -95,13 +94,14 @@ public class MainActivity extends Activity implements ConnectionCallbacks, OnCon
         tv2 = (TextView) findViewById(R.id.tv2);
         button = (Button) findViewById(R.id.button);
 
+        clearFile(FILENAME);
+
         tv2.setText("\nIN_VEHICLE: 0\nON_BICYCLE: 1\nON_FOOT: 2\nRUNNING: 8\nSTILL: 3\nTILTING: 5\nWALKING: 7\nUNKNOWN: 4");
 
         button.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                writeToFile("log.txt", output, MainActivity.this);
-                tv.setText(readFromFile("log.txt", MainActivity.this));
+                tv.setText(readFromFile(FILENAME, MainActivity.this));
             }
         });
 
@@ -120,11 +120,14 @@ public class MainActivity extends Activity implements ConnectionCallbacks, OnCon
 
     }
 
+
     @Override
     protected void onDestroy() {
         v.cancel();
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(activityReceiver);
         super.onDestroy();
     }
+
 
     @Override
     public void onConnected(@Nullable Bundle bundle) {
@@ -139,26 +142,36 @@ public class MainActivity extends Activity implements ConnectionCallbacks, OnCon
         Log.e("MainActivity","Connected");
     }
 
+
     @Override
     public void onConnectionSuspended(int i) {
         Log.e("MainActivity","Connection suspended");
     }
 
+
     @Override
     public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
         Log.e("MainActivity","Connection failed");
+    }
 
+
+    private void clearFile(String filename) {
+        File file = new File(getFilesDir(), filename);
+        boolean b = file.delete();
     }
 
 
     private void writeToFile(String filename, String data, Context context) {
         try {
-            OutputStreamWriter outputStreamWriter = new OutputStreamWriter(context.openFileOutput(filename, Context.MODE_PRIVATE));
+            OutputStreamWriter outputStreamWriter = new OutputStreamWriter(
+                    context.openFileOutput(
+                            filename,
+                            Context.MODE_APPEND));
             outputStreamWriter.write(data);
             outputStreamWriter.close();
         }
-        catch (IOException e) {
-            Log.e("IOException", "File write failed: " + e.toString());
+        catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
@@ -178,6 +191,7 @@ public class MainActivity extends Activity implements ConnectionCallbacks, OnCon
 
                 while ( (receiveString = bufferedReader.readLine()) != null ) {
                     stringBuilder.append(receiveString);
+                    stringBuilder.append("\n");
                 }
 
                 inputStream.close();
